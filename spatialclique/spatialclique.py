@@ -1,5 +1,5 @@
+from statistics import NormalDist
 import numpy as np
-import scipy.stats as st
 import networkx as nx
 
 
@@ -9,10 +9,10 @@ def mc_hard(src, dst, threshold):
     points, find the largest set of destination points that differ only by a 
     rigid 6-parameter transformation (no scale). The determination of sameness
     for the relative distances is controlled by the specified threshold value.
-    
+
     The order of the source and destination point sets must match, i.e.,
     represent putative correspondences.
-    
+
     Parameters
     ----------
     src : (M, 2) or (M, 3) array
@@ -22,7 +22,7 @@ def mc_hard(src, dst, threshold):
     threshold : scalar
         Maximum difference in distance between the source and destination points
         for edge inclusion in adjacency matrix. Must be greater than 0.
-    
+
     Returns
     -------
     maximum_clique : list with length = size of maximum clique
@@ -239,50 +239,75 @@ def distance_variance(pts, cov, d):
 
 def soft_adjacency(src, dst, src_cov, dst_cov, confidence):
     """Adjacency matrix based on whether the confidence intervals of the 
-    distance differences contain zero at the specified confidence level.
+    inter-set distance differences contain zero at the specified confidence
+    level.
 
     Parameters
     ----------
     src : (M, 2) or (M, 3) array
-        
-
+        Source coordinates.
+    dst : (M, 2) or (M, 3) array
+        Destination coordinates.
+    src_cov : (M, 2, 2) or (M, 3, 3) array
+        Source covariance matrices.
+    dst_cov : (M, 2, 2) or (M, 3, 3) array
+        Destination covariance matrices.
+    confidence : scalar
+        Confidence level for edge inclusion in adjacency matrix. Must be in 
+        (0 < confidence < 100) interval.
 
     Returns
     -------
     adjacency : (M, M) array
-        0 for no edge, 1 for edge
-
-
+        Standard adjacency matrix: 1 = edge, 0 - no edge.
     """
-    # Adjacency matrix based on whether the confidence intervals of the distance
-    # differences contain zero at the specified confidence level
 
-    # Inter-point distance arrays
+    # Intra-set distance arrays
     src_d = combination_distances(src)
     dst_d = combination_distances(dst)
 
-    # Propagated variances for all inter-point distances in the source and
-    # destination point sets
+    # Propagated variances for all intra-set distances between points in the 
+    # source and destination point sets
     src_d_var = distance_variance(src, src_cov, src_d)
     dst_d_var = distance_variance(dst, dst_cov, dst_d)
 
-    # Variances of the differences between corresponding source and
-    # destination inter-point distances
+    # Inter-set distance differencesa and variances
     difference = dst_d - src_d
     difference_var = src_d_var + dst_d_var
     difference_std = np.sqrt(difference_var)
 
     # Confidence multiplier
-    multiplier = st.norm.ppf((1 + confidence/100) / 2)
+    p = (1 + confidence/100) / 2
+    multiplier = NormalDist().inv_cdf(p)
 
     # Adjacency matrix
     adjacency = np.logical_and(difference + multiplier*difference_std >= 0,
                               difference - multiplier*difference_std <= 0)
+
     return adjacency.astype(np.int)
 
 
 def hard_adjacency(src, dst, threshold):
-    # Inter-point distance arrays
+    """Adjacency matrix based on whether the inter-set distance differences
+    exceed the specified threshold.
+
+    Parameters
+    ----------
+    src : (M, 2) or (M, 3) array
+        Source coordinates.
+    dst : (M, 2) or (M, 3) array
+        Destination coordinates.
+    threshold : scalar
+        Maximum difference in distance between the source and destination points
+        for edge inclusion in adjacency matrix. Must be greater than 0.
+
+    Returns
+    -------
+    adjacency : (M, M) array
+        Standard adjacency matrix: 1 = edge, 0 - no edge.
+    """
+
+    # Intra-set distance arrays
     src_d = combination_distances(src)
     dst_d = combination_distances(dst)
 
@@ -294,6 +319,20 @@ def hard_adjacency(src, dst, threshold):
 
 
 def maximum_clique(adjacency):
+    """Maximum clique of an adjacency matrix.
+
+    Parameters
+    ----------
+    adjacency : (M, M) array
+        Adjacency matrix.
+
+    Returns
+    -------
+    maximum_clique : list with length = size of maximum clique
+        Row indices of maximum clique coordinates. Set to False if no maximum
+        clique is found.
+    """
+
     G = nx.Graph(adjacency)
     cliques = list(nx.find_cliques(G))
     if len(cliques) < 1:
